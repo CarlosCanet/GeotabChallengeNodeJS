@@ -2,6 +2,7 @@ const GeotabApi = require('mg-api-js');
 const fs = require('fs').promises;
 const path = require('path');
 
+// Geotab API authentication credentials
 const AUTHENTICATION = {
     credentials: {
         database: 'demo_candidates_net',
@@ -10,29 +11,44 @@ const AUTHENTICATION = {
     },
     path: 'mypreview.geotab.com'
 }
+
+// Directory where backup must be stored
 const BACKUP_FOLDER = "backup_files";
+
+// Name of the file with the configuration parameters
 const CONFIG_FILE = "config.json";
 
+// Interval between backups (in seconds)
+const BACKUP_INTERVAL = 10;
+
+// Hours to backup if there is not backup files
+const HOURS_TO_BACKUP = 14;
+
+// Create Geotab API client instance, map to store data, last processed version (if done) and starting date (if there is no previous backup)
 const api = new GeotabApi(AUTHENTICATION);
 const fleet = new Map();
 let lastLogVersion, lastStatusVersion;
-let startDate = new Date(new Date().setUTCHours(0, 0, 0, 0) - 12 * 60 * 60 * 1000).toISOString();
+let startDate = new Date(new Date().setUTCHours(0, 0, 0, 0) - HOURS_TO_BACKUP * 60 * 60 * 1000).toISOString();
 
+// Class representing a vehicle with ID, name, VIN and data backup functions
 class Vehicle {
     constructor(vehicleId, name, vin) {
         this.vehicleId = vehicleId;
         this.name = name;
         this.vin = vin;
-        this.data = [];
+        // Generate file path for this vehicle's data
         this.fileName = path.join(BACKUP_FOLDER, vehicleId + ".csv");
+        // Create the CSV if it doesn't exist
         this.createFile();
     }
 
+    // Creates a new CSV file for this vehicle
     async createFile() {
         try {
             const exist = await fs.access(this.fileName, fs.constants.F_OK);
         } catch (error) {
             if (error.code === "ENOENT") {
+                // Create the file if it doesn't exist
                 await fs.writeFile(this.fileName, "timestamp,id,vin,lat,lon,speed,odometer\n");
             } else {
                 console.log(`Error creating file for vehicle ${this.vehicleId}`);
@@ -40,6 +56,7 @@ class Vehicle {
         }
     }
 
+    // Appends the new data to this vehicle's CSV file
     async backupVehicle(data) {
         try {
             const lines = data.map((item) => {
@@ -52,22 +69,26 @@ class Vehicle {
     }
 }
 
+// Loads the last processed versions (of the feed) from configuration file
 async function loadVersions() {
     try {
         const config = await fs.readFile(CONFIG_FILE);
         const configJson = JSON.parse(config.toString());
         lastLogVersion = configJson.lastLogVersion;
         lastStatusVersion = configJson.lastStatusVersion;
+        // If versions are loaded, stop using starting date
         if (lastLogVersion && lastStatusVersion) startDate = undefined;
     } catch (error) {
         console.log(error.message);
     }
 }
 
+// Update the last processed versions of the feed
 async function updateVersions() {
     await fs.writeFile(CONFIG_FILE, JSON.stringify({ lastLogVersion, lastStatusVersion }));
 }
 
+// Fetch a list of vehicles from the Geotab API and create Vehicle objects (in a map)
 async function getVehicles() {
     try {
         const devices = await api.call("Get", {
@@ -91,7 +112,9 @@ async function getVehicles() {
     }
 }
 
-function processEvents() {
+
+// Processes fetched events, maps them, merge both maps in one structure and sorts them by timestamp grouped by vehicle ID
+function processEvents(result) {
     const mappedLogEvents = result[0].data.map(logData => {
         return { deviceId: logData.device.id, timestamp: new Date(logData.dateTime), id: logData.id, latitude: logData.latitude, longitude: logData.longitude, speed: logData.speed, odometer: "-" };
     });
@@ -108,6 +131,7 @@ function processEvents() {
     }, {});
 }
 
+// Fetches new data from the Geotab API feed, processes it, updates the versions and makes the backup per vehicle
 async function run() {
     let calls = [];
     calls.push(["GetFeed", {
@@ -135,20 +159,18 @@ async function run() {
     startDate = undefined;
     await updateVersions();
 
-    const groupedEvents = processEvents();
+    const groupedEvents = processEvents(result);
     Object.keys(groupedEvents).forEach(deviceId => { fleet.get(deviceId).backupVehicle(groupedEvents[deviceId]) });
 
-    console.log(JSON.stringify(result[0].data, null, 2));
-    console.log(JSON.stringify(result[1].data, null, 2));
-    console.log(result[0].data.length, result[0].toVersion);
-    console.log(result[1].data.length, result[1].toVersion, result[1].data[result[1].data.length - 1]?.dateTime);
+    console.log(`Backup done. ${result[0].data.length + result[1].data.length} events processed (${result[0].data.length} log events and ${result[1].data.length} status events).`)
 }
 
+// Initializes the script, loads versions, fetches vehicles data and starts the main loop
 async function main() {
     await loadVersions();
     await getVehicles();
     await run();
-    await setInterval(run, 1000 * 10);
+    await setInterval(run, BACKUP_INTERVAL * 1000);
 }
 
 main();
