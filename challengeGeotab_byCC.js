@@ -2,24 +2,6 @@ const GeotabApi = require('mg-api-js');
 const fs = require('fs').promises;
 const path = require('path');
 
-if (process.argv.length < 10) {
-    console.error("Usage: ");
-    console.error(`> node ${process.argv[1]} --s server --d database --u user --p password --f path`)
-}
-
-// Geotab API authentication credentials
-const AUTHENTICATION = {
-    credentials: {
-        database: process.argv[5],
-        userName: process.argv[7],
-        password: process.argv[9]
-    },
-    path: process.argv[3]
-}
-
-// Directory where backup must be stored
-const BACKUP_FOLDER = process.argv[11] ? process.argv[11] : "backup_files";
-
 // Name of the file with the configuration parameters
 const CONFIG_FILE = "config.json";
 
@@ -27,13 +9,32 @@ const CONFIG_FILE = "config.json";
 const BACKUP_INTERVAL = 10;
 
 // Hours to backup if there is not backup files
-const HOURS_TO_BACKUP = 14;
+const HOURS_TO_BACKUP = -10;
+
+// Check correct arguments
+if (process.argv.length < 10 && !process.argv.indexOf("--s") && !process.argv.indexOf("--d") && !process.argv.indexOf("--u") && !process.argv.indexOf("--p")) {
+    console.error("Usage: ");
+    console.error(`> node ${process.argv[1]} --s server --d database --u user --p password --f path`)
+}
+
+// Geotab API authentication credentials
+const authentication = {
+    credentials: {
+        database: process.argv[process.argv.indexOf("--d")+1],
+        userName: process.argv[process.argv.indexOf("--u")+1],
+        password: process.argv[process.argv.indexOf("--p")+1]
+    },
+    path: process.argv[process.argv.indexOf("--s")+1]
+}
 
 // Create Geotab API client instance, map to store data, last processed version (if done) and starting date (if there is no previous backup)
-const api = new GeotabApi(AUTHENTICATION);
+const api = new GeotabApi(authentication);          // If authentication is not valid it is checked in GeotabApi
 const fleet = new Map();
 let lastLogVersion, lastStatusVersion;
 let startDate = new Date(new Date().setUTCHours(0, 0, 0, 0) - HOURS_TO_BACKUP * 60 * 60 * 1000).toISOString();
+
+// Directory where backup must be stored
+const backupFolder = process.argv.indexOf("--f") ? process.argv[process.argv.indexOf("--f")+1] : "backup_files";
 
 // Class representing a vehicle with ID, name, VIN and data backup functions
 class Vehicle {
@@ -42,7 +43,7 @@ class Vehicle {
         this.name = name;
         this.vin = vin;
         // Generate file path for this vehicle's data
-        this.fileName = path.join(BACKUP_FOLDER, vehicleId + ".csv");
+        this.fileName = path.join(backupFolder, vehicleId + ".csv");
         // Create the CSV if it doesn't exist
         this.createFile();
     }
