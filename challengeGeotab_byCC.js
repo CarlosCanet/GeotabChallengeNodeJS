@@ -2,18 +2,23 @@ const GeotabApi = require('mg-api-js');
 const fs = require('fs').promises;
 const path = require('path');
 
+if (process.argv.length < 10) {
+    console.error("Usage: ");
+    console.error(`> node ${process.argv[1]} --s server --d database --u user --p password --f path`)
+}
+
 // Geotab API authentication credentials
 const AUTHENTICATION = {
     credentials: {
-        database: 'demo_candidates_net',
-        userName: 'carlos@carlosca.net',
-        password: 'JFd3Bz_p4QgLCfYw67JYwxzGRUiYgC_P'
+        database: process.argv[5],
+        userName: process.argv[7],
+        password: process.argv[9]
     },
-    path: 'mypreview.geotab.com'
+    path: process.argv[3]
 }
 
 // Directory where backup must be stored
-const BACKUP_FOLDER = "backup_files";
+const BACKUP_FOLDER = process.argv[11] ? process.argv[11] : "backup_files";
 
 // Name of the file with the configuration parameters
 const CONFIG_FILE = "config.json";
