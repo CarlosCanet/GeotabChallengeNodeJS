@@ -16,7 +16,7 @@ This repository contains the solution developed by Carlos Canet for the Geotab F
 
 To execute the application, use the following command:
 ```
-> node challengeGeotab_byCC.js --s server --d database --u user --p password --gt nnn --st nnn --f file path --c
+> node src/index.js --s server --d database --u user --p password --gt nnn --st nnn --f file path --c
 ```
 ### Command Line Arguments
 ```
@@ -32,7 +32,7 @@ To execute the application, use the following command:
 
 ### Example usage:
 ```
-> node challengeGeotab_byCC.js --s "my.geotab.com" --d "database" --u "user@email.com" --p "password" --gt 0000000000000000 --st 0000000000000000 --f Backup_Files
+> node src/index.js --s "my.geotab.com" --d "database" --u "user@email.com" --p "password" --gt 0000000000000000 --st 0000000000000000 --f Backup_Files
 ```
 
 ## CSV Output

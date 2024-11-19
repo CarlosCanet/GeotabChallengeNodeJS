@@ -1,9 +1,7 @@
 const GeotabApi = require("mg-api-js");
+const { Vehicle } = require("./vehicle");
+const { loadVersions, updateVersions } = require("./version");
 const fs = require("fs").promises;
-const path = require("path");
-
-// Name of the file with the configuration parameters
-const CONFIG_FILE = "config.json";
 
 // Interval between readings from API (in seconds)
 const BACKUP_INTERVAL = 20;
@@ -43,48 +41,7 @@ let startDate = new Date(new Date() - HOURS_TO_BACKUP * 60 * 60 * 1000).toISOStr
 // Directory where backup must be stored
 const backupFolder = process.argv.indexOf("--f") >= 0 ? process.argv[process.argv.indexOf("--f") + 1] : "./";
 
-// Class representing a vehicle with ID, name, VIN and data backup functions
-class Vehicle {
-  constructor(vehicleId, name, vin) {
-    this.vehicleId = vehicleId;
-    this.name = name;
-    this.vin = vin;
-    // Generate file path for this vehicle's data
-    this.fileName = path.join(backupFolder, vehicleId + ".csv");
-  }
-
-  // Creates a new CSV file for this vehicle
-  async createFile() {
-    try {
-      const exist = await fs.access(this.fileName, fs.constants.F_OK);
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        // Create the file if it doesn't exist
-        await fs.writeFile(this.fileName, "timestamp,id,vin,lat,lon,speed,odometer\n");
-      } else {
-        console.log(`Error creating file for vehicle ${this.vehicleId}`);
-      }
-    }
-  }
-
-  // Appends the new data to this vehicle's CSV file
-  async backupVehicle(data) {
-    try {
-      const lines = data
-        .map((item) => {
-          return `${item.timestamp.toISOString()},${item.id},${this.vin},${item.latitude},${item.longitude},${item.speed},${item.odometer}`;
-        })
-        .join("\n");
-      // Create the CSV if it doesn't exist
-      await this.createFile();
-      await fs.appendFile(this.fileName, lines + "\n");
-    } catch (error) {
-      console.log(`Error writing file for vehicle ${this.vehicleId}: ${error.message}`);
-    }
-  }
-}
-
-// Creates a new CSV file for this vehicle
+// Creates the backup files folder
 async function createFolder() {
   try {
     const exist = await fs.access(backupFolder, fs.constants.F_OK);
@@ -96,29 +53,6 @@ async function createFolder() {
       console.log(`Error creating backup folder`);
     }
   }
-}
-
-// Loads the last processed versions (of the feed) from configuration file
-async function loadVersions() {
-  try {
-    lastLogVersion = process.argv.indexOf("--gt") >= 0 ? process.argv[process.argv.indexOf("--gt") + 1].toLowerCase() : undefined;
-    lastStatusVersion = process.argv.indexOf("--st") >= 0 ? process.argv[process.argv.indexOf("--st") + 1].toLowerCase() : undefined;
-    if (!lastLogVersion || !lastStatusVersion) {
-      const config = await fs.readFile(CONFIG_FILE);
-      const configJson = JSON.parse(config.toString());
-      lastLogVersion = lastLogVersion ?? (configJson.lastLogVersion)?.toLowerCase();
-      lastStatusVersion = lastStatusVersion ?? (configJson.lastStatusVersion)?.toLowerCase();
-      // If versions are loaded, stop using starting date
-    }
-    if (lastLogVersion && lastStatusVersion) startDate = undefined;
-  } catch (error) {
-    if (error.code !== "ENOENT") console.log(`Bad JSON config file: ${error.message}`);
-  }
-}
-
-// Update the last processed versions of the feed
-async function updateVersions() {
-  await fs.writeFile(CONFIG_FILE, JSON.stringify({ lastLogVersion, lastStatusVersion }));
 }
 
 // Fetch a list of vehicles from the Geotab API and create Vehicle objects (in a map)
@@ -136,14 +70,7 @@ async function getVehicles() {
     });
     devices.forEach((device) => {
       if (!fleet.has(device.id)) {
-        fleet.set(
-          device.id,
-          new Vehicle(
-            device.id,
-            device.name,
-            device.vehicleIdentificationNumber
-          )
-        );
+        fleet.set(device.id, new Vehicle(device.id, device.name, device.vehicleIdentificationNumber, backupFolder));
       }
     });
   } catch (error) {
