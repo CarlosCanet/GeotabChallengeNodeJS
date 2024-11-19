@@ -32,7 +32,7 @@ To execute the application, use the following command:
 
 ### Example usage:
 ```
-> node challengeGeotab_byCC.js --s mypreview.geotab.com --d demo_candidates_net --u carlos@carlosca.net --p JFd3Bz_p4QgLCfYw67JYwxzGRUiYgC_P --gt 0000000000000000 --st 0000000000000000 --f Backup_Files
+> node challengeGeotab_byCC.js --s "my.geotab.com" --d "database" --u "user@email.com" --p "password" --gt 0000000000000000 --st 0000000000000000 --f Backup_Files
 ```
 
 ## CSV Output
