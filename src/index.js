@@ -1,6 +1,5 @@
 const GeotabApi = require("mg-api-js");
 const { Vehicle } = require("./vehicle");
-const { loadVersions, updateVersions } = require("./version");
 const fs = require("fs").promises;
 
 // Interval between readings from API (in seconds)
@@ -35,7 +34,6 @@ const authentication = {
 // Create Geotab API client instance, map to store data, last processed version (if done) and starting date (if there is no previous backup)
 const api = new GeotabApi(authentication); // If authentication is not valid it is checked in GeotabApi
 const fleet = new Map();
-let lastLogVersion, lastStatusVersion;
 let startDate = new Date(new Date() - HOURS_TO_BACKUP * 60 * 60 * 1000).toISOString();
 
 // Directory where backup must be stored
@@ -80,8 +78,8 @@ async function getVehicles() {
 }
 
 // Processes fetched events, maps them, merge both maps in one structure and sorts them by timestamp grouped by vehicle ID
-function processEvents(result) {
-  const mappedLogEvents = result[0].data.map((logData) => {
+async function processEvents(result) {
+  const mappedLogEvents = result[0].map((logData) => {
     return {
       deviceId: logData.device.id,
       timestamp: new Date(logData.dateTime),
@@ -92,7 +90,7 @@ function processEvents(result) {
       odometer: "-",
     };
   });
-  const mappedStatusEvents = result[1].data.map((statusData) => {
+  const mappedStatusEvents = result[1].map((statusData) => {
     return {
       deviceId: statusData.device.id,
       timestamp: new Date(statusData.dateTime),
@@ -109,10 +107,15 @@ function processEvents(result) {
       return a.timestamp - b.timestamp;
     });
 
-  return mappedEvents.reduce((prev, curr) => {
+  const groupedEvents = mappedEvents.reduce((prev, curr) => {
     prev[curr.deviceId] = prev[curr.deviceId] ? prev[curr.deviceId].concat(curr) : [curr];
     return prev;
   }, {});
+
+  const promises = Object.keys(groupedEvents).map((deviceId) => {
+    return fleet.get(deviceId).backupVehicle(groupedEvents[deviceId]);
+  });
+  await Promise.all(promises);
 }
 
 // Fetches new data from the Geotab API feed, processes it, updates the versions and makes the backup per vehicle
@@ -120,10 +123,9 @@ async function run() {
   try {
     let calls = [];
     calls.push([
-      "GetFeed",
+      "Get",
       {
         typeName: "LogRecord",
-        fromVersion: lastLogVersion,
         search: {
           fromDate: startDate,
         },
@@ -132,10 +134,9 @@ async function run() {
     ]);
 
     calls.push([
-      "GetFeed",
+      "Get",
       {
         typeName: "StatusData",
-        fromVersion: lastStatusVersion,
         search: {
           fromDate: startDate,
           diagnosticSearch: { id: "DiagnosticOdometerId" },
@@ -144,19 +145,11 @@ async function run() {
       },
     ]);
     const result = await api.multiCall(calls);
+    startDate = new Date().toISOString();
 
-    lastLogVersion = result[0].toVersion;
-    lastStatusVersion = result[1].toVersion;
-    startDate = undefined;
-    await updateVersions();
-
-    const groupedEvents = processEvents(result);
-    Object.keys(groupedEvents).forEach((deviceId) => {
-      fleet.get(deviceId).backupVehicle(groupedEvents[deviceId]);
-    });
-
+    await processEvents(result);
     console.log(
-      `Backup done. ${result[0].data.length + result[1].data.length} events processed (${result[0].data.length} log events and ${result[1].data.length} status events).`
+      `Backup done. ${result[0].length + result[1].length} events processed (${result[0].length} log events and ${result[1].length} status events).`
     );
   } catch (error) {
     console.error(error.message);
@@ -166,7 +159,6 @@ async function run() {
 // Initializes the script, loads versions, fetches vehicles data and starts the main loop
 async function main() {
   await createFolder();
-  await loadVersions();
   await getVehicles();
   await run();
   if (process.argv.indexOf("--c") >= 0)
